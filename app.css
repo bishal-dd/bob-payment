@@ -1,0 +1,30 @@
+/* Apply styles to form rows */
+.form-row {
+  margin-bottom: 15px;
+}
+
+/* Style labels */
+label {
+  display: block;
+  font-weight: bold;
+}
+
+/* Style inputs */
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+/* Style required span */
+.required {
+  color: red;
+}
+
+/* Clearfix for the form */
+.clear {
+  clear: both;
+}
