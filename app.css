@@ -15,13 +15,13 @@ input[type="password"] {
   width: 100%;
   padding: 10px;
   border: 1px solid #ccc;
-  border-radius: 5px;
+  border-radius: 6px;
   box-sizing: border-box;
 }
 
 /* Style required span */
-.required {
-  color: red;
+.card-required {
+  color: rgb(0, 4, 255);
 }
 
 /* Clearfix for the form */

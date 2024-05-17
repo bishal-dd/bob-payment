@@ -30,6 +30,9 @@ function bob_payment_gateway_init() {
 	 */
 	class WC_Bob_Payment_Gateway extends WC_Payment_Gateway {
 
+		private $logger;
+
+
 		/**
 		 * Constructor for the gateway.
 		 */
@@ -50,6 +53,11 @@ function bob_payment_gateway_init() {
 			$this->merchant_id = $this->get_option( 'merchant_id' );
 			$this->testmode = $this->get_option( 'testmode' );
 
+		
+			
+			$this->logger = wc_get_logger();
+			$this->log_context = array('source' => 'bob_payment_gateway');
+
 			// Define supported features.
 			$this->supports = array( 'products' );
 
@@ -57,6 +65,8 @@ function bob_payment_gateway_init() {
 			add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
 			add_action( 'wp_enqueue_scripts', array( $this, 'payment_scripts' ) );
 			add_action('wp_enqueue_scripts', array($this, 'enqueue_styles'));
+
+			
 
 		}
 
@@ -128,7 +138,7 @@ function bob_payment_gateway_init() {
 			}
 		
 			// let's suppose it is our payment processor JavaScript that allows to obtain a token
-			wp_enqueue_script( 'misha_js', 'some payment processor site/api/token.js' );
+			wp_enqueue_swp_enqueue_scriptcript( 'misha_js', 'some payment processor site/api/token.js' );
 		
 			// and this is our custom JS in your plugin directory that works with token.js
 			wp_register_script( 'woocommerce_misha', plugins_url( 'misha.js', __FILE__ ), array( 'jquery', 'misha_js' ) );
@@ -165,25 +175,25 @@ function bob_payment_gateway_init() {
 		 
 			// I recommend to use inique IDs, because other gateways could already use #ccNo, #expdate, #cvc
 			echo '
-				<div class="form-row form-row-wide">
+			<div class="form-row form-row-wide">
 				<label>
-				Card Number <span class="required">*</span>
+				Cardholder Name <span class="card-required">*</span>
 				</label>
-					<input id="misha_ccNo" type="text" autocomplete="off">
+					<input id="card_holder_name" type="text" autocomplete="off">
 				</div>
 				<div class="form-row form-row-wide">
 				<label>
-				Cardholder name <span class="required">*</span>
+				Card Number <span class="card-required">*</span>
 				</label>
-					<input id="misha_ccNo" type="text" autocomplete="off">
+					<input id="card_holder_no" type="text" autocomplete="off">
 				</div>
 					<div class="form-row form-row-first">
-						<label>Expiry Date <span class="required">*</span></label>
-						<input id="misha_expdate" type="text" autocomplete="off" placeholder="MM / YY">
+						<label>Expiry Date <span class="card-required">*</span></label>
+						<input id="card_expdate" type="text" autocomplete="off" placeholder="MM / YY">
 					</div>
 					<div class="form-row form-row-last">
-						<label>Card Code (CVC) <span class="required">*</span></label>
-						<input id="misha_cvv" type="password" autocomplete="off" placeholder="CVC">
+						<label>Card Code (CVC) <span class="card-required">*</span></label>
+						<input id="card_cvv" type="password" autocomplete="off" placeholder="CVC">
 					</div>
 					<div class="clear"></div>
 			
@@ -212,21 +222,67 @@ function bob_payment_gateway_init() {
 		 */
 		public function process_payment( $order_id ) {
 			$order = wc_get_order( $order_id );
+			    // Generate the keys
+				$config = array(
+					"digest_alg" => "sha256",
+					"private_key_bits" => 2048,
+					"private_key_type" => OPENSSL_KEYTYPE_RSA,
+				);
+			
+				$res = openssl_pkey_new($config);
+				openssl_pkey_export($res, $private_key);
+				$key_details = openssl_pkey_get_details($res);
+				$public_key = $key_details["key"];
+				$this->logger->info( 'Private key: ' . $private_key );
+				$this->logger->info( 'Public key: ' . $public_key );
+			$args = array(
+                'body' => json_encode(array(
+                    'merchantId' => $this->merchant_id,
+                    'pubKey' => 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp1mHlp7EPnBY_lyO2d6Odwg98GxZozSIpMxg8r5SxmkRrzI_6ZH0WZlai3IyXA6BIgmH6QoFK6nNHz6kVtzhT_aPRzSo2eSstQFfYxcP2eFswO0uTDu41xlnCy77JI4GUv9joE37dA6wtru1QMiDmkG-Iyp62Piszx9ertMDb2JxcD1ieRngHp5v3GKiG5W7nWo0ge3xgJGcu6JjVxjRXN4bbxUqNbMBkxM993Yjy_wL11lBOM4xLWqMszuWMDrQiU-kJwbjKeR1ssCo2IhazGyEdrPr2C94QNmhVfYhK3lSe2c7gXXaEBzElyN59viAm0WCYNuM038uha8MIqLxsQIDAQAB',
+                    'purchaseId' => (string) $order_id,
+                )),
+                'headers' => array(
+                    'Content-Type' => 'application/json'
+                )
+            );
+			$response = wp_remote_post( 'https://3dsecure.bob.bt/3dss/mkReq', $args );
+			$this->logger->info( 'Response body: ' . wp_remote_retrieve_body( $response ) . ' Response code: ' . wp_remote_retrieve_response_code( $response ));
 
-			// Mark as on-hold (we're awaiting the payment).
-			$order->update_status( 'on-hold', __( 'Awaiting payment', 'woocommerce' ) );
+			if( 200 === wp_remote_retrieve_response_code( $response ) ) {
+ 
+				$body = json_decode( wp_remote_retrieve_body( $response ), true );
 
-			// Reduce stock levels.
-			$order->reduce_order_stock();
-
-			// Remove cart.
-			WC()->cart->empty_cart();
-
-			// Return thankyou redirect.
-			return array(
-				'result'   => 'success',
-				'redirect' => $this->get_return_url( $order ),
-			);
+		
+				// it could be different depending on your payment processor
+				if( 000 === $body[ 'errorCode' ] ) {
+		
+				   // we received the payment
+				   $order->payment_complete();
+				   $order->reduce_order_stock();
+		
+				   // some notes to customer (replace true with false to make it private)
+				   $order->add_order_note( 'Hey, your order is paid! Thank you!', true );
+		
+				   // Empty cart
+				   WC()->cart->empty_cart();
+		
+				   // Redirect to the thank you page
+				   return array(
+					   'result' => 'success',
+					   'redirect' => $this->get_return_url( $order ),
+				   );
+		
+				} else {
+				   wc_add_notice( 'Please try again.', 'error' );
+				   return;
+			   }
+		
+		   } else {
+			   wc_add_notice( 'Connection error.', 'error' );
+			   return;
+		   }
+	
+			
 		}
 	}
 
