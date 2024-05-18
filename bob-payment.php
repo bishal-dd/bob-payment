@@ -52,6 +52,8 @@ function bob_payment_gateway_init() {
 			$this->enabled = $this->get_option( 'enabled' );
 			$this->merchant_id = $this->get_option( 'merchant_id' );
 			$this->testmode = $this->get_option( 'testmode' );
+			$this->public_key = $this->get_option( 'public_key' );
+			$this->private_key = $this->get_option( 'private_key' );
 
 		
 			
@@ -102,6 +104,20 @@ function bob_payment_gateway_init() {
 					'default'     => __( 'BOB Payment', 'woocommerce' ),
 					'desc_tip'    => true,
 				),
+				'public_key'        => array(
+					'title'       => __( 'Public Key', 'woocommerce' ),
+					'type'        => 'password',
+					'description' => __( 'For security reasons, enter your public key', 'woocommerce' ),
+					'placeholder' => __( '----Begin Public Key----', 'woocommerce' ),
+					'desc_tip'    => true,
+				),
+				'private_key'        => array(
+					'title'       => __( 'Private Key', 'woocommerce' ),
+					'type'        => 'password',
+					'description' => __( 'For security reasons, enter your private key', 'woocommerce' ),
+					'placeholder'     => __( '----Begin Private Key----', 'woocommerce' ),
+					'desc_tip'    => true,
+				),
 				'testmode' => array(
 					'title'       => 'Test mode',
 					'label'       => 'Enable Test Mode',
@@ -128,7 +144,7 @@ function bob_payment_gateway_init() {
 			}
 		
 			// no reason to enqueue JavaScript if API keys are not set
-			if( empty( $this->private_key ) || empty( $this->publishable_key ) ) {
+			if( empty( $this->private_key )  ) {
 				return;
 			}
 		
@@ -138,18 +154,9 @@ function bob_payment_gateway_init() {
 			}
 		
 			// let's suppose it is our payment processor JavaScript that allows to obtain a token
-			wp_enqueue_swp_enqueue_scriptcript( 'misha_js', 'some payment processor site/api/token.js' );
 		
 			// and this is our custom JS in your plugin directory that works with token.js
-			wp_register_script( 'woocommerce_misha', plugins_url( 'misha.js', __FILE__ ), array( 'jquery', 'misha_js' ) );
 		
-			// in most payment processors you have to use PUBLIC KEY to obtain a token
-			wp_localize_script( 'woocommerce_misha', 'misha_params', array(
-				'publishableKey' => $this->publishable_key
-			) );
-		
-			wp_enqueue_script( 'woocommerce_misha' );
-			wp_enqueue_script( 'modal-js', plugins_url( 'modal.js', __FILE__ ), array( 'jquery' ), '1.0', true );
 
 		
 		}
@@ -189,7 +196,8 @@ function bob_payment_gateway_init() {
 				</div>
 					<div class="form-row form-row-first">
 						<label>Expiry Date <span class="card-required">*</span></label>
-						<input id="card_expdate" type="text" autocomplete="off" placeholder="MM / YY">
+						<input id="card_expdate_month" type="text" autocomplete="off" style="width: 40%;" placeholder="MM">/
+						<input id="card_expdate_year" type="text" autocomplete="off" style="width: 40%;" placeholder="YY">
 					</div>
 					<div class="form-row form-row-last">
 						<label>Card Code (CVC) <span class="card-required">*</span></label>
@@ -207,8 +215,8 @@ function bob_payment_gateway_init() {
 
 		public function validate_fields(){
  
-			if( empty( $_POST[ 'billing_first_name' ] ) ) {
-				wc_add_notice( 'First name is required!', 'error' );
+			if( empty( $_POST[ 'card_holder_name' ] ) ) {
+				wc_add_notice( 'Card Holder Name is required!', 'error' );
 				return false;
 			}
 			return true;
@@ -222,23 +230,29 @@ function bob_payment_gateway_init() {
 		 */
 		public function process_payment( $order_id ) {
 			$order = wc_get_order( $order_id );
-			    // Generate the keys
-				$config = array(
-					"digest_alg" => "sha256",
-					"private_key_bits" => 2048,
-					"private_key_type" => OPENSSL_KEYTYPE_RSA,
-				);
-			
-				$res = openssl_pkey_new($config);
-				openssl_pkey_export($res, $private_key);
-				$key_details = openssl_pkey_get_details($res);
-				$public_key = $key_details["key"];
-				$this->logger->info( 'Private key: ' . $private_key );
-				$this->logger->info( 'Public key: ' . $public_key );
+
+			$card_holder_name = sanitize_text_field($_POST['card_holder_name']);
+			$card_number = sanitize_text_field($_POST['card_holder_no']);
+			$card_expiry_month = sanitize_text_field($_POST['card_expdate_month']);
+			$card_expiry_year = sanitize_text_field($_POST['card_expdate_year']);
+			$card_expiry = $card_expiry_year . $card_expiry_month;
+			$card_cvc = sanitize_text_field($_POST['card_cvv']);
+			$card_country = get_billing_country();
+			$card_billing_address_1 = get_billing_address_1();
+			$card_billing_address_2 = get_billing_address_2();
+			$card_billing_city = get_billing_city();
+			$card_billing_state = get_billing_state();
+			$card_billing_postcode = get_billing_postcode();
+			$card_billing_phone = get_billing_phone();
+			$card_billing_email = get_billing_email();
+			$amount = $order->get_total();
+			$currency = get_woocommerce_currency();
+			$transactionTimestamp = date('YmdHis');
+				
 			$args = array(
                 'body' => json_encode(array(
                     'merchantId' => $this->merchant_id,
-                    'pubKey' => $public_key,
+                    'pubKey' => $this->public_key,
                     'purchaseId' => (string) $order_id,
                 )),
                 'headers' => array(
@@ -249,12 +263,68 @@ function bob_payment_gateway_init() {
 			$this->logger->info( 'Response body: ' . wp_remote_retrieve_body( $response ) . ' Response code: ' . wp_remote_retrieve_response_code( $response ));
 
 			if( 200 === wp_remote_retrieve_response_code( $response ) ) {
- 
-				$body = json_decode( wp_remote_retrieve_body( $response ), true );
+ 				// Example field values
+				$fields = [
+					'MPI_TRANS_TYPE' => 'SALES',
+					'MPI_MERC_ID' => $this->merchant_id,
+					'MPI_PAN' => $card_number,
+					'MPI_CARD_HOLDER_NAME' => $card_holder_name,
+					'MPI_PAN_EXP' => $card_expiry,
+					'MPI_CVV2' => $card_cvc,
+					'MPI_TRXN_ID' => (string) $order_id,
+					'MPI_PURCH_DATE' => $transactionTimestamp,
+					'MPI_PURCH_CURR' => 'USD',
+					'MPI_PURCH_AMT' => $amount,
+					'MPI_BILL_ADDR_CITY' => $card_billing_city,
+					'MPI_BILL_ADDR_CNTRY' => $card_country,
+					'MPI_BILL_ADDR_POSTCODE' => $card_billing_postcode,
+					'MPI_BILL_ADDR_LINE1' => $card_billing_address_1,
+					'MPI_BILL_ADDR_LINE2' => $card_billing_address_2,
+					'MPI_EMAIL' => $card_billing_email,
+					'MPI_RESPONSE_LINK' => get_site_url()
+				];
 
-		
+				$dataString = implode('', $fields);
+				openssl_sign($dataString, $signature, $this->private_key, OPENSSL_ALGO_SHA256);
+				$base64UrlSignature = str_replace(
+					['+', '/', '='],
+					['-', '_', ''],
+					base64_encode($signature)
+				);
+
+				$MPI_MAC = $base64UrlSignature;
+
+				$payment_args = array(
+					'body' => json_encode(array(
+						'MPI_TRANS_TYPE' => 'SALES',
+						'MPI_MERC_ID' => $this->merchant_id,
+						'MPI_PAN' => $card_number,
+						'MPI_CARD_HOLDER_NAME' => $card_holder_name,
+						'MPI_PAN_EXP' => $card_expiry,
+						'MPI_CVV2' => $card_cvc,
+						'MPI_TRXN_ID' => (string) $order_id,
+						'MPI_PURCH_DATE' => $transactionTimestamp,
+						'MPI_PURCH_CURR' => 'USD',
+						'MPI_PURCH_AMT' => $amount,
+						'MPI_BILL_ADDR_CITY' => $card_billing_city,
+						'MPI_BILL_ADDR_CNTRY' => $card_country,
+						'MPI_BILL_ADDR_POSTCODE' => $card_billing_postcode,
+						'MPI_BILL_ADDR_LINE1' => $card_billing_address_1,
+						'MPI_BILL_ADDR_LINE2' => $card_billing_address_2,
+						'MPI_EMAIL' => $card_billing_email,
+						'MPI_RESPONSE_LINK' => get_site_url(),
+						'MPI_MAC' => $MPI_MAC,
+					)),
+					'headers' => array(
+						'Content-Type' => 'application/json'
+					)
+					);
+				$transaction_response = wp_remote_post( 'https://3dsecure.bob.bt/3dss/mercReq', $payment_args );
+				$transaction_body = json_decode( wp_remote_retrieve_body( $transaction_response ), true );
+
+
 				// it could be different depending on your payment processor
-				if( 000 === $body[ 'errorCode' ] ) {
+				if( 000 === $transaction_body[ 'MPI_ERROR_CODE' ] ) {
 		
 				   // we received the payment
 				   $order->payment_complete();
