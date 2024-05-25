@@ -186,22 +186,22 @@ function bob_payment_gateway_init() {
 				<label>
 				Cardholder Name <span class="card-required">*</span>
 				</label>
-					<input id="card_holder_name" type="text" autocomplete="off">
+					<input id="card_holder_name" name="card_holder_name" type="text" autocomplete="off">
 				</div>
 				<div class="form-row form-row-wide">
 				<label>
 				Card Number <span class="card-required">*</span>
 				</label>
-					<input id="card_holder_no" type="text" autocomplete="off">
+					<input id="card_holder_no" name="card_holder_no" type="text" autocomplete="off">
 				</div>
 					<div class="form-row form-row-first">
 						<label>Expiry Date <span class="card-required">*</span></label>
-						<input id="card_expdate_month" type="text" autocomplete="off" style="width: 40%;" placeholder="MM">/
-						<input id="card_expdate_year" type="text" autocomplete="off" style="width: 40%;" placeholder="YY">
+						<input id="card_expdate_month" name="card_expdate_month" type="text" autocomplete="off" style="width: 40%;" placeholder="MM">/
+						<input id="card_expdate_year" name="card_expdate_year" type="text" autocomplete="off" style="width: 40%;" placeholder="YY">
 					</div>
 					<div class="form-row form-row-last">
 						<label>Card Code (CVC) <span class="card-required">*</span></label>
-						<input id="card_cvv" type="password" autocomplete="off" placeholder="CVC">
+						<input id="card_cvv" name="card_cvv" type="password" autocomplete="off" placeholder="CVC">
 					</div>
 					<div class="clear"></div>
 			
@@ -213,15 +213,26 @@ function bob_payment_gateway_init() {
 		 
 		}
 
-		public function validate_fields(){
- 
-			if( empty( $_POST[ 'card_holder_name' ] ) ) {
-				wc_add_notice( 'Card Holder Name is required!', 'error' );
+		public function validate_fields() {
+			if (empty($_POST['card_holder_name'])) {
+				wc_add_notice('Card Holder Name is required!', 'error');
+				return false;
+			}
+			if (empty($_POST['card_holder_no'])) {
+				wc_add_notice('Card Number is required!', 'error');
+				return false;
+			}
+			if (empty($_POST['card_expdate_month']) || empty($_POST['card_expdate_year'])) {
+				wc_add_notice('Card Expiry Date is required!', 'error');
+				return false;
+			}
+			if (empty($_POST['card_cvv'])) {
+				wc_add_notice('Card CVC is required!', 'error');
 				return false;
 			}
 			return true;
-		 
 		}
+		
 		/**
 		 * Process the payment and return the result.
 		 *
@@ -230,29 +241,34 @@ function bob_payment_gateway_init() {
 		 */
 		public function process_payment( $order_id ) {
 			$order = wc_get_order( $order_id );
-
 			$card_holder_name = sanitize_text_field($_POST['card_holder_name']);
 			$card_number = sanitize_text_field($_POST['card_holder_no']);
 			$card_expiry_month = sanitize_text_field($_POST['card_expdate_month']);
 			$card_expiry_year = sanitize_text_field($_POST['card_expdate_year']);
 			$card_expiry = $card_expiry_year . $card_expiry_month;
 			$card_cvc = sanitize_text_field($_POST['card_cvv']);
-			$card_country = get_billing_country();
-			$card_billing_address_1 = get_billing_address_1();
-			$card_billing_address_2 = get_billing_address_2();
-			$card_billing_city = get_billing_city();
-			$card_billing_state = get_billing_state();
-			$card_billing_postcode = get_billing_postcode();
-			$card_billing_phone = get_billing_phone();
-			$card_billing_email = get_billing_email();
+			$card_country = $order->get_billing_country();
+			$card_billing_address_1 = $order->get_billing_address_1();
+			$card_billing_address_2 = $order->get_billing_address_2();
+			$card_billing_city = $order->get_billing_city();
+			$card_billing_state = $order->get_billing_state();
+			$card_billing_postcode = $order->get_billing_postcode();
+			$card_billing_phone = $order->get_billing_phone();
+			$card_billing_email = $order->get_billing_email();
 			$amount = $order->get_total();
 			$currency = get_woocommerce_currency();
 			$transactionTimestamp = date('YmdHis');
-				
-			$args = array(
+			$new_key_pair = openssl_pkey_new(array(
+				"private_key_bits" => 2048,
+				"private_key_type" => OPENSSL_KEYTYPE_RSA,
+			));
+			openssl_pkey_export($new_key_pair, $private_key);
+			$details = openssl_pkey_get_details($new_key_pair);
+			$public_key = $details['key'];
+					$args = array(
                 'body' => json_encode(array(
                     'merchantId' => $this->merchant_id,
-                    'pubKey' => $this->public_key,
+                    'pubKey' => $public_key,
                     'purchaseId' => (string) $order_id,
                 )),
                 'headers' => array(
@@ -260,9 +276,10 @@ function bob_payment_gateway_init() {
                 )
             );
 			$response = wp_remote_post( 'https://3dsecure.bob.bt/3dss/mkReq', $args );
+			$body = json_decode( wp_remote_retrieve_body( $response ), true );
 			$this->logger->info( 'Response body: ' . wp_remote_retrieve_body( $response ) . ' Response code: ' . wp_remote_retrieve_response_code( $response ));
 
-			if( 200 === wp_remote_retrieve_response_code( $response ) ) {
+			if( 200 === wp_remote_retrieve_response_code( $response ) && "000" === $body['responseCode'] ) {
  				// Example field values
 				$fields = [
 					'MPI_TRANS_TYPE' => 'SALES',
@@ -281,11 +298,16 @@ function bob_payment_gateway_init() {
 					'MPI_BILL_ADDR_LINE1' => $card_billing_address_1,
 					'MPI_BILL_ADDR_LINE2' => $card_billing_address_2,
 					'MPI_EMAIL' => $card_billing_email,
-					'MPI_RESPONSE_LINK' => get_site_url()
 				];
 
+				$this->logger->info( '$fields: ' . print_r( $fields, true ) );
+
 				$dataString = implode('', $fields);
-				openssl_sign($dataString, $signature, $this->private_key, OPENSSL_ALGO_SHA256);
+				
+				
+				openssl_sign($dataString, $signature, $private_key, OPENSSL_ALGO_SHA256);
+				$this->logger->info( 'Signature: ' . $signature );
+
 				$base64UrlSignature = str_replace(
 					['+', '/', '='],
 					['-', '_', ''],
@@ -293,6 +315,7 @@ function bob_payment_gateway_init() {
 				);
 
 				$MPI_MAC = $base64UrlSignature;
+				$this->logger->info( 'MPI_MAC: ' . $MPI_MAC );
 
 				$payment_args = array(
 					'body' => json_encode(array(
@@ -302,7 +325,7 @@ function bob_payment_gateway_init() {
 						'MPI_CARD_HOLDER_NAME' => $card_holder_name,
 						'MPI_PAN_EXP' => $card_expiry,
 						'MPI_CVV2' => $card_cvc,
-						'MPI_TRXN_ID' => (string) $order_id,
+						'MPI_TRXN_ID' => (string) $placeholder_order,
 						'MPI_PURCH_DATE' => $transactionTimestamp,
 						'MPI_PURCH_CURR' => 'USD',
 						'MPI_PURCH_AMT' => $amount,
@@ -312,16 +335,17 @@ function bob_payment_gateway_init() {
 						'MPI_BILL_ADDR_LINE1' => $card_billing_address_1,
 						'MPI_BILL_ADDR_LINE2' => $card_billing_address_2,
 						'MPI_EMAIL' => $card_billing_email,
-						'MPI_RESPONSE_LINK' => get_site_url(),
 						'MPI_MAC' => $MPI_MAC,
 					)),
 					'headers' => array(
 						'Content-Type' => 'application/json'
 					)
 					);
+					$this->logger->info( 'payment_args: ' . print_r($payment_args, true ) );
 				$transaction_response = wp_remote_post( 'https://3dsecure.bob.bt/3dss/mercReq', $payment_args );
 				$transaction_body = json_decode( wp_remote_retrieve_body( $transaction_response ), true );
 
+				$this->logger->info( 'Response body: ' . wp_remote_retrieve_body( $transaction_response ) . ' Response code: ' . wp_remote_retrieve_response_code( $transaction_response ));
 
 				// it could be different depending on your payment processor
 				if( 000 === $transaction_body[ 'MPI_ERROR_CODE' ] ) {
