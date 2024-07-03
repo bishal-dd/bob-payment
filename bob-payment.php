@@ -140,13 +140,16 @@ function bob_payment_gateway_init() {
 		 * @return array
 		 */
 		public function process_payment( $order_id ) {
-			$order = wc_get_order( $order_id );
+				   $order = wc_get_order( $order_id );
+				   $order_total = $order->get_total();
+				   $customer_name = $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
 				   $order->payment_complete();
 				   $order->reduce_order_stock();
 		
 				   // some notes to customer (replace true with false to make it private)
 				   $to = $order->get_billing_email();
 					$subject = 'Bank Details for Wire Transfer';
+					$headers = array('Content-Type: text/html; charset=UTF-8');
 					$message = '
 					<html>
 					<head>
@@ -158,7 +161,7 @@ function bob_payment_gateway_init() {
 								color: #333333;
 							}
 							.container {
-								width: 80%;
+								width: 40%;
 								margin: 0 auto;
 								padding: 20px;
 								border: 1px solid #dddddd;
@@ -174,6 +177,7 @@ function bob_payment_gateway_init() {
 							}
 							.content {
 								padding: 20px;
+								font-size: 1.1em;
 							}
 							.footer {
 								padding: 10px;
@@ -189,17 +193,18 @@ function bob_payment_gateway_init() {
 								<h1>Bank Details for Wire Transfer</h1>
 							</div>
 							<div class="content">
-								<p>Dear Customer,</p>
-								<p>Please find the bank details below for the wire transfer payment:</p>
-								<p>Beneficiary Bank:'. $this->BeneficiaryBank . '</p>
-								<p>Beneficiary Name:'. $this->BeneficiaryName . '</p>
-								<p>Beneficiary Account No:'. $this->BeneficiaryAccountNo . '</p>
-								<p>Beneficiary Bank SWIFT CODE:'. $this->BeneficiaryBankSWIFTCODE . '</p>
-								<p>Beneficiary Address:'. $this->BeneficiaryAddress . '</p>
+								<p>Dear ' . $customer_name . ',</p>
+								<p>Please find the bank details and amount below for the wire transfer payment:</p>
+								<p><b>Order Total:</b> ' . wc_price($order_total) . '</p>
+								<p><b>Beneficiary Bank:</b> '. $this->BeneficiaryBank . '</p>
+								<p><b>Beneficiary Name:</b> '. $this->BeneficiaryName . '</p>
+								<p><b>Beneficiary Account No:</b> '. $this->BeneficiaryAccountNo . '</p>
+								<p><b>Beneficiary Bank SWIFT CODE:</b> '. $this->BeneficiaryBankSWIFTCODE . '</p>
+								<p><b>Beneficiary Address:</b> '. $this->BeneficiaryAddress . '</p>
 								<p>Thank you for your purchase!</p>
 							</div>
 							<div class="footer">
-								<p>&copy; ' . date('Y') . ' Your Company. All rights reserved.</p>
+								<p>&copy; ' . date('Y') . ' Organic Himalayan Cordyceps . All rights reserved.</p>
 							</div>
 						</div>
 					</body>
@@ -208,7 +213,7 @@ function bob_payment_gateway_init() {
 
 					if (is_email($to)) {
 						// Send email and check for errors
-						if (wp_mail($to, $subject, $message)) {
+						if (wp_mail($to, $subject, $message, $headers)) {
 							$this->logger->info( 'Email sent successfully to: ' . $to);
 						} else {
 							$this->logger->error( 'Failed to send email to: ' . $to );
