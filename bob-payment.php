@@ -1,7 +1,7 @@
 <?php
 /*
-	Plugin Name: BOB Payment Gateway
-	Description: Extends WooCommerce with a BOB Payment gateway.
+	Plugin Name: Direct Wire Transfer
+	Description: Extends WooCommerce with a Direct Wire Transfer.
 	Plugin URI: https://www.lightwebx.com
 	Version: 1.0
 	Author: Light Webx
@@ -39,8 +39,8 @@ function bob_payment_gateway_init() {
 		public function __construct() {
 			$this->id                 = 'bob_payment_gateway';
 			$this->icon               = "";
-			$this->method_title       = __( 'BOB Payment Gateway', 'woocommerce' );
-			$this->method_description = __( 'Pay with BOB Payment Gateway', 'woocommerce' );
+			$this->method_title       = __( 'Direct Wire Transfer Email', 'woocommerce' );
+			$this->method_description = __( 'Get Email with bank details', 'woocommerce' );
 			$this->has_fields = true;
 			// Load the settings.
 			$this->init_form_fields();
@@ -49,11 +49,12 @@ function bob_payment_gateway_init() {
 			// Define user set variables.
 			$this->title       = $this->get_option( 'title' );
 			$this->description = $this->get_option( 'description' );
+			$this->BeneficiaryBank  = $this->get_option( 'BeneficiaryBank' );
+			$this->BeneficiaryName = $this->get_option( 'BeneficiaryName' );
 			$this->enabled = $this->get_option( 'enabled' );
-			$this->merchant_id = $this->get_option( 'merchant_id' );
-			$this->testmode = $this->get_option( 'testmode' );
-			$this->public_key = $this->get_option( 'public_key' );
-			$this->private_key = $this->get_option( 'private_key' );
+			$this->BeneficiaryAccountNo = $this->get_option( 'BeneficiaryAccountNo' );
+			$this->BeneficiaryAddress = $this->get_option( 'BeneficiaryAddress' );
+			$this->BeneficiaryBankSWIFTCODE = $this->get_option( 'BeneficiaryBankSWIFTCODE' );
 
 		
 			
@@ -93,33 +94,38 @@ function bob_payment_gateway_init() {
 					'default'     => '',
 					'desc_tip'    => true,
 				),
-				'merchant_id'        => array(
-					'title'       => __( 'Merchant ID', 'woocommerce' ),
+				'BeneficiaryBank'  => array(
+					'title'       => __( 'Beneficiary Bank', 'woocommerce' ),
 					'type'        => 'text',
-					'description' => __( 'This controls the title which the user sees during checkout.', 'woocommerce' ),
-					'default'     => __( 'BOB Payment', 'woocommerce' ),
+					'description' => __( 'Bank account', 'woocommerce' ),
+					'default'     => '',
 					'desc_tip'    => true,
 				),
-				'public_key'        => array(
-					'title'       => __( 'Public Key', 'woocommerce' ),
-					'type'        => 'password',
-					'description' => __( 'For security reasons, enter your public key', 'woocommerce' ),
-					'placeholder' => __( '----Begin Public Key----', 'woocommerce' ),
+				'BeneficiaryName'  => array(
+					'title'       => __( 'Beneficiary Name', 'woocommerce' ),
+					'type'        => 'text',
+					'description' => __( 'Beneficiary Name.', 'woocommerce' ),
+					'default'     => '',
 					'desc_tip'    => true,
 				),
-				'private_key'        => array(
-					'title'       => __( 'Private Key', 'woocommerce' ),
-					'type'        => 'password',
-					'description' => __( 'For security reasons, enter your private key', 'woocommerce' ),
-					'placeholder'     => __( '----Begin Private Key----', 'woocommerce' ),
+				'BeneficiaryAccountNo' => array(
+					'title'       => __( 'Beneficiary Account No', 'woocommerce' ),
+					'type'        => 'text',
+					'description' => __( 'Beneficiary Account No', 'woocommerce' ),
+					'default'     => "",
 					'desc_tip'    => true,
 				),
-				'testmode' => array(
-					'title'       => 'Test mode',
-					'label'       => 'Enable Test Mode',
-					'type'        => 'checkbox',
-					'description' => 'Place the payment gateway in test mode using test API keys.',
-					'default'     => 'yes',
+				'BeneficiaryBankSWIFTCODE' => array(
+					'title'       => __( 'Beneficiary Bank SWIFT CODE', 'woocommerce' ),
+					'type'        => 'text',
+					'description' => __( 'Beneficiary Bank SWIFT CODE', 'woocommerce' ),
+					'default'     => "",
+					'desc_tip'    => true,
+				),
+				'BeneficiaryAddress'        => array(
+					'title'       => __( 'Beneficiary Address', 'woocommerce' ),
+					'type'        => 'textarea',
+					'description' => __( 'Beneficiary Address', 'woocommerce' ),
 					'desc_tip'    => true,
 				),
 			);
@@ -185,7 +191,11 @@ function bob_payment_gateway_init() {
 							<div class="content">
 								<p>Dear Customer,</p>
 								<p>Please find the bank details below for the wire transfer payment:</p>
-								<p>' . nl2br($this->bank_details) . '</p>
+								<p>Beneficiary Bank:'. $this->BeneficiaryBank . '</p>
+								<p>Beneficiary Name:'. $this->BeneficiaryName . '</p>
+								<p>Beneficiary Account No:'. $this->BeneficiaryAccountNo . '</p>
+								<p>Beneficiary Bank SWIFT CODE:'. $this->BeneficiaryBankSWIFTCODE . '</p>
+								<p>Beneficiary Address:'. $this->BeneficiaryAddress . '</p>
 								<p>Thank you for your purchase!</p>
 							</div>
 							<div class="footer">
